@@ -14,7 +14,7 @@ class MDPSolver:
         self.epsilon = epsilon
 
         # Discretization parameters
-        self.position_bins = 10
+        self.position_bins = 15  # Increased precision
         self.velocity_bins = 5
         self.angle_bins = 12
 
@@ -120,11 +120,11 @@ if __name__ == "__main__":
     train_env = gym.make("parking-v0", render_mode="rgb_array")
     
     print("Training the agent...")
-    solver = train_agent(train_env, episodes=1000)
+    solver = train_agent(train_env, episodes=2500)
     
     test_env = gym.make("parking-v0", render_mode="human")
     print("Testing the agent...")
-    test_agent(test_env, solver, episodes=5)
+    test_agent(test_env, solver, episodes=25)
     
     train_env.close()
     test_env.close()
