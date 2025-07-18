@@ -117,12 +117,14 @@ def test_agent(env, solver, episodes=10):
         print(f"Test Episode: {episode}, Total Reward: {total_reward}")
 
 if __name__ == "__main__":
-    env = gym.make("parking-v0", render_mode="human")
+    train_env = gym.make("parking-v0", render_mode="rgb_array")
     
     print("Training the agent...")
-    solver = train_agent(env, episodes=1000)
+    solver = train_agent(train_env, episodes=1000)
     
+    test_env = gym.make("parking-v0", render_mode="human")
     print("Testing the agent...")
-    test_agent(env, solver, episodes=5)
+    test_agent(test_env, solver, episodes=5)
     
-    env.close()
+    train_env.close()
+    test_env.close()
