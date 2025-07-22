@@ -171,15 +171,6 @@ class ParkingEnv(AbstractEnv, GoalEnv):
         spot_start_y = -parking_spot_length/2
         spot_end_y = parking_spot_length/2
 
-        net.add_lane(
-            "parking_0", "parking_0_end",
-            StraightLane(
-                [curb_x, spot_start_y], [curb_x, spot_end_y],
-                width=parking_spot_width,
-                line_types=solid_line
-            )
-        )
-
         # Create multiple parking spots
         for i in range(spots):
             spot_y_center = i * (parking_spot_length + 1) - (spots - 1) * (parking_spot_length + 1) / 2
@@ -192,7 +183,6 @@ class ParkingEnv(AbstractEnv, GoalEnv):
                     line_types=solid_line
                 )
             )
-
 
         self.road = Road(
             network=net,
