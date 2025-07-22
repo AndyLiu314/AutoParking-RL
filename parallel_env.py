@@ -101,10 +101,10 @@ class ParkingEnv(AbstractEnv, GoalEnv):
                 "simulation_frequency": 15,
                 "policy_frequency": 5,
                 "duration": 100,
-                "screen_width": 600,
-                "screen_height": 300,
+                "screen_width": 1080,
+                "screen_height": 720,
                 "centering_position": [0.5, 0.5],
-                "scaling": 7,
+                "scaling": 10,
                 "controlled_vehicles": 1,
                 "vehicles_count": 3,
                 "add_walls": True,
@@ -160,9 +160,10 @@ class ParkingEnv(AbstractEnv, GoalEnv):
         net.add_lane(
             "main", "main_end",
             StraightLane(
-                [main_lane_x, -30], [main_lane_x, 30],
+                [main_lane_x, -30],
+                [main_lane_x, 30],
                 width=main_road_width,
-                line_types=solid_line
+                line_types=solid_line,
             )
         )
 
@@ -173,7 +174,7 @@ class ParkingEnv(AbstractEnv, GoalEnv):
 
         # Create multiple parking spots
         for i in range(spots):
-            spot_y_center = i * (parking_spot_length + 1) - (spots - 1) * (parking_spot_length + 1) / 2
+            spot_y_center = (i-(spots-1)/2) * (parking_spot_length  + 7)
             net.add_lane(
                 f"parking_{i}", f"parking_{i}_end",
                 StraightLane(
@@ -197,9 +198,11 @@ class ParkingEnv(AbstractEnv, GoalEnv):
         # Controlled vehicles
         self.controlled_vehicles = []
         for i in range(self.config["controlled_vehicles"]):
-            x0 = (i - self.config["controlled_vehicles"] // 2) * 10
+            x0 = (i - self.config["controlled_vehicles"] // 2)
             vehicle = self.action_type.vehicle_class(
-                self.road, [x0, 0], 2 * self.np_random.uniform(), 0
+                road = self.road,
+                position = [x0 * 4, 0],
+                heading=np.deg2rad(90),
             )
             vehicle.color = VehicleGraphics.EGO_COLOR
             self.road.vehicles.append(vehicle)
@@ -233,7 +236,7 @@ class ParkingEnv(AbstractEnv, GoalEnv):
 
         # Walls
         if self.config["add_walls"]:
-            width, height = 70, 42
+            width, height = 35, 60
             for y in [-height / 2, height / 2]:
                 obstacle = Obstacle(self.road, [0, y])
                 obstacle.LENGTH, obstacle.WIDTH = (width, 1)
