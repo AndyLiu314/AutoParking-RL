@@ -79,7 +79,7 @@ def main():
 
     # Start timer
     start_time = pygame.time.get_ticks()
-    time_limit = 10000  # 5 seconds in milliseconds
+    time_limit = 5000  # 5 seconds in milliseconds
 
     while running:
         screen.fill(BLACK)
