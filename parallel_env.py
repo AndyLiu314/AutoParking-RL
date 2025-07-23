@@ -100,7 +100,7 @@ class ParkingEnv(AbstractEnv, GoalEnv):
                 "steering_range": np.deg2rad(45),
                 "simulation_frequency": 15,
                 "policy_frequency": 5,
-                "duration": 100,
+                "duration": 60,
                 "screen_width": 1080,
                 "screen_height": 720,
                 "centering_position": [0.5, 0.5],
@@ -310,11 +310,11 @@ class ParkingEnv(AbstractEnv, GoalEnv):
         return self.time >= self.config["duration"]
 
 
-class ParkingEnvActionRepeat(ParkingEnv):
-    def __init__(self):
-        super().__init__({"policy_frequency": 1, "duration": 20})
-
-
-class ParkingEnvParkedVehicles(ParkingEnv):
-    def __init__(self):
-        super().__init__({"vehicles_count": 10})
+# class ParkingEnvActionRepeat(ParkingEnv):
+#     def __init__(self):
+#         super().__init__({"policy_frequency": 1, "duration": 20})
+#
+#
+# class ParkingEnvParkedVehicles(ParkingEnv):
+#     def __init__(self):
+#         super().__init__({"vehicles_count": 10})
