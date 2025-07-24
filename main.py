@@ -117,7 +117,10 @@ def test_agent(env, solver, episodes=10):
         print(f"Test Episode: {episode}, Total Reward: {total_reward}")
 
 if __name__ == "__main__":
-    train_env = gym.make("parking-v0", render_mode="rgb_array")
+    train_env = gym.make("parking-v0", render_mode="rgb_array", config={
+        "add_walls": False,
+        "duration": 50
+    })
     
     print("Training the agent...")
     solver = train_agent(train_env, episodes=2500)
