@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from abc import abstractmethod
+from abc import abstractmethod, ABC
 
 import numpy as np
 from gymnasium import Env
 
 from highway_env.envs.common.abstract import AbstractEnv
 from highway_env.envs.common.observation import (
-    MultiAgentObservation,
     observation_factory,
 )
 from highway_env.road.lane import LineType, StraightLane
@@ -17,7 +16,7 @@ from highway_env.vehicle.kinematics import Vehicle
 from highway_env.vehicle.objects import Landmark, Obstacle
 
 
-class GoalEnv(Env):
+class GoalEnv(Env, ABC):
     """
     Interface for A goal-based environment.
 
@@ -27,7 +26,7 @@ class GoalEnv(Env):
     since it does not have an official PyPi package, PyPi does not allow direct dependencies to git repositories.
     So instead, we just reproduce the interface here.
 
-    A goal-based environment. It functions just as any regular OpenAI Gym environment but it
+    A goal-based environment. It functions just as any regular OpenAI Gym environment, but it
     imposes a required structure on the observation_space. More concretely, the observation
     space is required to contain at least three elements, namely `observation`, `desired_goal`, and
     `achieved_goal`. Here, `desired_goal` specifies the goal that the agent should attempt to achieve.
@@ -56,24 +55,12 @@ class GoalEnv(Env):
         raise NotImplementedError
 
 
-class ParkingEnv(AbstractEnv, GoalEnv):
-    """
-    A continuous control environment.
-
-    It implements a reach-type task, where the agent observes their position and speed and must
-    control their acceleration and steering so as to reach a given goal.
-
-    Credits to Munir Jojo-Verge for the idea and initial implementation.
-    """
-
-    # For parking env with GrayscaleObservation, the env need
-    # this PARKING_OBS to calculate the reward and the info.
-    # Bug fixed by Mcfly(https://github.com/McflyWZX)
+class ParkingEnv(AbstractEnv):
     PARKING_OBS = {
         "observation": {
             "type": "KinematicsGoal",
             "features": ["x", "y", "vx", "vy", "cos_h", "sin_h"],
-            "scales": [100, 100, 5, 5, 1, 1],
+            "scales": [100, 100, 5, 5, 1, 1], # the scales for the features
             "normalize": False,
         }
     }
@@ -121,16 +108,18 @@ class ParkingEnv(AbstractEnv, GoalEnv):
             self, self.PARKING_OBS["observation"]
         )
 
-    def _info(self, obs, action) -> dict:
+
+    """
+        info = {
+            "speed": self.vehicle.speed,
+            "crashed": self.vehicle.crashed,
+            "action": action,
+        }
+    """
+    def _info(self, obs, action=None) -> dict:
         info = super()._info(obs, action)
-        if isinstance(self.observation_type, MultiAgentObservation):
-            success = tuple(
-                self._is_success(agent_obs["achieved_goal"], agent_obs["desired_goal"])
-                for agent_obs in obs
-            )
-        else:
-            obs = self.observation_type_parking.observe()
-            success = self._is_success(obs["achieved_goal"], obs["desired_goal"])
+        obs = self.observation_type_parking.observe()
+        success = self._is_success(obs["achieved_goal"], obs["desired_goal"])
         info.update({"is_success": success})
         return info
 
@@ -152,8 +141,7 @@ class ParkingEnv(AbstractEnv, GoalEnv):
         parking_spot_width = 2.5
         curb_offset = 2.0
 
-        solid_line: tuple[LineType, LineType] = (LineType.CONTINUOUS, LineType.CONTINUOUS)
-        broken_line: tuple[LineType, LineType] = (LineType.STRIPED, LineType.STRIPED)
+        solid_line = LineType.CONTINUOUS, LineType.CONTINUOUS
 
         # Create main driving lane (vertical)
         main_lane_x = 0
@@ -169,8 +157,6 @@ class ParkingEnv(AbstractEnv, GoalEnv):
 
         # PARKING SPOT NEXT TO MAIN ROADS on THE RIGHT SIDE
         curb_x = main_lane_x + main_road_width/2 + curb_offset + parking_spot_width/2
-        spot_start_y = -parking_spot_length/2
-        spot_end_y = parking_spot_length/2
 
         # Create multiple parking spots
         for i in range(spots):
@@ -308,13 +294,3 @@ class ParkingEnv(AbstractEnv, GoalEnv):
     def _is_truncated(self) -> bool:
         """The episode is truncated if the time is over."""
         return self.time >= self.config["duration"]
-
-
-# class ParkingEnvActionRepeat(ParkingEnv):
-#     def __init__(self):
-#         super().__init__({"policy_frequency": 1, "duration": 20})
-#
-#
-# class ParkingEnvParkedVehicles(ParkingEnv):
-#     def __init__(self):
-#         super().__init__({"vehicles_count": 10})
