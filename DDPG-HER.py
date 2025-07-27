@@ -2,6 +2,7 @@ import gymnasium as gym
 import highway_env
 import numpy as np
 import matplotlib.pyplot as plt
+import torch
 
 from stable_baselines3 import HerReplayBuffer, DDPG
 from stable_baselines3.common.noise import NormalActionNoise
@@ -9,6 +10,10 @@ from stable_baselines3.her.goal_selection_strategy import GoalSelectionStrategy
 
 # Create environment
 train_env = gym.make("parking-v0", render_mode="rgb_array")
+
+# Use GPU if available
+if torch.cuda.is_available():
+    torch.set_default_device("cuda")
 
 # Initializing action noise object used for exploration
 num_actions = train_env.action_space.shape[0]
