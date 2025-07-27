@@ -68,6 +68,7 @@ class ParkingEnv(AbstractEnv):
     def __init__(self, config: dict = None, render_mode: str | None = None) -> None:
         super().__init__(config, render_mode)
         self.observation_type_parking = None
+        self.success_steps = 0  # Track consecutive steps within the goal
 
     @classmethod
     def default_config(cls) -> dict:
@@ -87,7 +88,7 @@ class ParkingEnv(AbstractEnv):
                 "steering_range": np.deg2rad(45),
                 "simulation_frequency": 15,
                 "policy_frequency": 5,
-                "duration": 60,
+                "duration": 80,
                 "screen_width": 1080,
                 "screen_height": 720,
                 "centering_position": [0.5, 0.5],
@@ -126,6 +127,7 @@ class ParkingEnv(AbstractEnv):
     def _reset(self):
         self._create_road()
         self._create_vehicles()
+        self.success_steps = 0  # Reset on episode start
 
     def _create_road(self, spots: int = 4) -> None:
         """
@@ -275,10 +277,23 @@ class ParkingEnv(AbstractEnv):
         return reward
 
     def _is_success(self, achieved_goal: np.ndarray, desired_goal: np.ndarray) -> bool:
-        return (
-                self.compute_reward(achieved_goal, desired_goal, {})
-                > -self.config["success_goal_reward"]
+        # Check if car is within the goal (as before)
+        within_goal = (
+            self.compute_reward(achieved_goal, desired_goal, {})
+            > -self.config["success_goal_reward"]
         )
+        # Require near-zero velocity (vx, vy)
+        velocity_threshold = 0.1  # m/s, adjust as needed
+        vx, vy = achieved_goal[2], achieved_goal[3]
+        stopped = abs(vx) < velocity_threshold and abs(vy) < velocity_threshold
+
+        # Number of steps required to be within goal for 2 seconds
+        required_steps = int(2 * self.config["simulation_frequency"])
+        if within_goal and stopped:
+            self.success_steps += 1
+        else:
+            self.success_steps = 0
+        return self.success_steps >= required_steps
 
     def _is_terminated(self) -> bool:
         """The episode is over if the ego vehicle crashed or the goal is reached or time is over."""
