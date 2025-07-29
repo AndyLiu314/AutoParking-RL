@@ -81,8 +81,14 @@ class ParkingEnv(AbstractEnv):
                     "scales": [100, 100, 5, 5, 1, 1],
                     "normalize": False,
                 },
-                "action": {"type": "ContinuousAction"},
-                "reward_weights": [0.5, 1.0, 0.5, 0.5, 1.0, 1.0],
+                "action": {
+                    "type": "ContinuousAction",
+                    "longitudinal": True,
+                    "lateral": True,
+                    "speed_range": [-10, 10],  # Allow reverse speeds
+                    "steering_range": [-np.pi/4, np.pi/4],
+                },
+                "reward_weights": [1.0, 1.0, 0.0, 0.0, 0.1, 0.1],  # [x, y, vx, vy, cos_h, sin_h]
                 "success_goal_reward": 0.11,
                 "collision_reward": -5,
                 "steering_range": np.deg2rad(45),
@@ -192,6 +198,9 @@ class ParkingEnv(AbstractEnv):
                 position = [x0 * 4, 0],
                 heading=np.deg2rad(90),
             )
+            # Configure vehicle to support reverse movement
+            vehicle.MIN_SPEED = -10  # Allow reverse speeds
+            vehicle.MAX_SPEED = 10   # Allow forward speeds
             vehicle.color = VehicleGraphics.EGO_COLOR
             self.road.vehicles.append(vehicle)
             self.controlled_vehicles.append(vehicle)

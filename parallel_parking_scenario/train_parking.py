@@ -29,6 +29,21 @@ except ImportError:
     print("Install with: pip install intel-extension-for-pytorch")
     device = torch.device("cpu")
 
+# Try CUDA as fallback
+try:
+    import torch
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+        print(f"✅ Using NVIDIA GPU: {torch.cuda.get_device_name()}")
+        # Optimize GPU settings for better performance
+        torch.backends.cudnn.benchmark = True
+        torch.backends.cudnn.deterministic = False
+        print("🚀 GPU optimizations enabled")
+    elif device.type == "cpu":
+        print("⚠️ No GPU detected, using CPU")
+except:
+    pass
+
 # Register the environment
 gym.register(
     id="parallel-parking-v0",
@@ -49,18 +64,11 @@ def train_parking_model():
     train_env = DummyVecEnv([lambda: make_env() for _ in range(4)])  # 4 parallel environments
     eval_env = DummyVecEnv([lambda: make_env() for _ in range(1)])
     
-    # Optional: Normalize observations and rewards
-    # train_env = VecNormalize(train_env, norm_obs=True, norm_reward=True)
-    # eval_env = VecNormalize(eval_env, norm_obs=True, norm_reward=True)
-    
-    # Create log directory
     log_dir = "./parallel_parking_scenario/parking_training_logs"
     os.makedirs(log_dir, exist_ok=True)
     
-    # Configure logger
     configure(log_dir, ["stdout", "csv", "tensorboard"])
     
-    # Create callbacks
     eval_callback = EvalCallback(
         eval_env,
         best_model_save_path=f"{log_dir}/best_model",
@@ -76,7 +84,6 @@ def train_parking_model():
         name_prefix="parking_model"
     )
     
-    # Initialize SAC model with optimized hyperparameters for parking
     model = SAC(
         "MultiInputPolicy",
         train_env,
@@ -84,35 +91,37 @@ def train_parking_model():
         learning_rate=3e-4,  # Reduced from 3e-4 for better fine-tuning
         buffer_size=1000000,
         learning_starts=5000,  # Increased from 1000 for better exploration
-        batch_size=512,  # Increased from 256 for better gradient estimates
+        batch_size=256,  # Reduced back to 256 for better FPS
         tau=0.002,  # Reduced from 0.005 for more stable learning
         gamma=0.98,
         train_freq=1,
-        gradient_steps=2,  # Increased from 1 for more updates per step
+        gradient_steps=1,  # Reduced back to 1 for better FPS
         ent_coef="auto",
         target_entropy="auto",
         policy_kwargs=dict(
             net_arch=dict(
-                pi=[512, 512, 256],  # Larger policy network
-                qf=[512, 512, 256]   # Larger Q-function network
+                pi=[256, 256],  # Larger policy network
+                qf=[256, 256]   # Larger Q-function network
                 # Alternative for faster training: pi=[256, 256], qf=[256, 256]
             )
         ),
-        tensorboard_log=f"{log_dir}/tensorboard_logs"
+        tensorboard_log=f"{log_dir}/tensorboard_logs",
+        device=device  # Explicitly set the device
     )
     
-    # Train the model
+    print(f"🎯 Model initialized on device: {device}")
+    if device.type == "cuda":
+        print(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+        print(f"GPU Memory Allocated: {torch.cuda.memory_allocated(0) / 1e6:.1f} MB")
     
     model.learn(
-        total_timesteps=3000000,  # 3M timesteps for large network
+        total_timesteps=100000,  # 
         callback=[eval_callback, checkpoint_callback],
         progress_bar=True
     )
     
-    # Save the final model
     model.save(f"{log_dir}/final_model")
     
-    # Close environments
     train_env.close()
     eval_env.close()
     
