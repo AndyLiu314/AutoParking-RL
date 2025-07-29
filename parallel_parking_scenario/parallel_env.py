@@ -82,8 +82,8 @@ class ParkingEnv(AbstractEnv):
                     "normalize": False,
                 },
                 "action": {"type": "ContinuousAction"},
-                "reward_weights": [1, 0.3, 0, 0, 0.02, 0.02],
-                "success_goal_reward": 0.22,
+                "reward_weights": [0.5, 1.0, 0.5, 0.5, 1.0, 1.0],
+                "success_goal_reward": 0.11,
                 "collision_reward": -5,
                 "steering_range": np.deg2rad(45),
                 "simulation_frequency": 15,
@@ -282,17 +282,23 @@ class ParkingEnv(AbstractEnv):
             self.compute_reward(achieved_goal, desired_goal, {})
             > -self.config["success_goal_reward"]
         )
-        # Require near-zero velocity (vx, vy)
-        velocity_threshold = 0.1  # m/s, adjust as needed
+        
+        # Better stopping detection
         vx, vy = achieved_goal[2], achieved_goal[3]
-        stopped = abs(vx) < velocity_threshold and abs(vy) < velocity_threshold
-
+        speed = np.sqrt(vx**2 + vy**2)  # Actual speed magnitude
+        speed_threshold = 0.05  # 5 cm/s - much more strict
+        
+        # Check if car is actually stopped
+        stopped = speed < speed_threshold
+        
         # Number of steps required to be within goal for 2 seconds
         required_steps = int(2 * self.config["simulation_frequency"])
+        
         if within_goal and stopped:
             self.success_steps += 1
         else:
             self.success_steps = 0
+            
         return self.success_steps >= required_steps
 
     def _is_terminated(self) -> bool:

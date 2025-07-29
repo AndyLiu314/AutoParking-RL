@@ -3,7 +3,7 @@ from parallel_env import ParkingEnv
 from stable_baselines3 import SAC
 
 env = ParkingEnv(render_mode="human")
-model = SAC.load("parking_sac/best_model/best_model.zip", env=env)
+model = SAC.load("./parallel_parking_scenario/parking_training_logs/best_model/best_model.zip", env=env)
 
 
 obs, info = env.reset()
