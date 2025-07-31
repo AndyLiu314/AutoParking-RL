@@ -6,35 +6,11 @@ from parallel_env import ParkingEnv
 class ManualParkingControl:
     def __init__(self):
         """Initialize manual control for parking environment"""
+        # Initialize pygame for keyboard input
+        pygame.init()
+        
         self.env = ParkingEnv(render_mode="human")
-        
-        # Configure the environment for manual control
-        self.env.configure({
-            "observation": {
-                "type": "KinematicsGoal",
-                "features": ["x", "y", "vx", "vy", "cos_h", "sin_h"],
-                "scales": [100, 100, 5, 5, 1, 1],
-                "normalize": False,
-            },
-            "action": {
-                "type": "ContinuousAction",
-                "longitudinal": True,
-                "lateral": True,
-                "speed_range": [-10, 10],  # Allow reverse speeds
-                "steering_range": [-np.pi/4, np.pi/4],
-            },
-            "simulation_frequency": 15,
-            "policy_frequency": 5,
-            "duration": 80,
-            "screen_width": 1080,
-            "screen_height": 720,
-            "centering_position": [0.5, 0.5],
-            "scaling": 10,
-            "controlled_vehicles": 1,
-            "vehicles_count": 3,
-            "add_walls": True,
-        })
-        
+
         # Print action space info
         print(f"🎯 Action space: {self.env.action_space}")
         print(f"🎯 Action space shape: {self.env.action_space.shape}")
@@ -49,7 +25,8 @@ class ManualParkingControl:
         self.steering = 0.0
         self.acceleration = 0.0
         self.steering_speed = 0.1
-        self.acceleration_speed = 0.1  # Reduced from 0.3 for slower movement
+        self.acceleration_speed = 0.01  # Reduced from 0.3 for slower movement
+        self.emergency_brake = False # Flag to maintain braking
         
         print("🎮 Manual Parking Control")
         print("Controls:")
@@ -57,7 +34,7 @@ class ManualParkingControl:
         print("  W - Backward")
         print("  Q/E - Alternative Forward/Backward")
         print("  D/A - Steer Left/Right")
-        print("  X - Brake (stop)")
+        print("  X - Emergency Brake (true stop)")
         print("  SPACE - Reset")
         print("  ESC - Quit")
         print("  R - Random spawn")
@@ -71,6 +48,7 @@ class ManualParkingControl:
                 return False
             
             if event.type == pygame.KEYDOWN:
+                print(f"🔍 Key pressed: {event.key}")  # Debug: print any key press
                 if event.key == pygame.K_ESCAPE:
                     self.running = False
                     return False
@@ -81,11 +59,25 @@ class ManualParkingControl:
                 elif event.key == pygame.K_g:
                     self.show_goal_info()
                 elif event.key == pygame.K_x:
-                    self.acceleration = 0.0  # Brake - stop immediately
-                    print("🛑 Brake pressed - stopping!")
+                    # Emergency brake: use maximum negative acceleration
+                    self.acceleration = -1.0  # Maximum brake
+                    self.emergency_brake = True  # Flag to maintain braking
+                    print("🛑 Emergency brake pressed - maximum deceleration!")
         
         # Continuous key handling
         keys = pygame.key.get_pressed()
+        
+        # Emergency brake handling
+        if self.emergency_brake:
+            # Maintain maximum braking until stopped
+            self.acceleration = -1.0
+            # Check if car is stopped (you can access vehicle speed from observation)
+            if self.obs is not None and isinstance(self.obs, dict) and 'achieved_goal' in self.obs:
+                vx, vy = self.obs['achieved_goal'][2], self.obs['achieved_goal'][3]
+                speed = (vx**2 + vy**2)**0.5
+                if speed < 0.1:  # If speed is very low, stop emergency braking
+                    self.emergency_brake = False
+                    print("🛑 Emergency brake released - car stopped!")
         
         # Steering control (A/D keys)
         if keys[pygame.K_d]:  # Left
@@ -99,21 +91,22 @@ class ManualParkingControl:
             elif self.steering < 0:
                 self.steering = min(self.steering + self.steering_speed * 0.5, 0)
         
-        # Acceleration control (W/S keys)
-        if keys[pygame.K_s]:  # Forward
-            self.acceleration = min(self.acceleration + self.acceleration_speed, 1.0)
-        elif keys[pygame.K_w]:  # Backward
-            self.acceleration = max(self.acceleration - self.acceleration_speed, -1.0)
-        elif keys[pygame.K_q]:  # Alternative Forward
-            self.acceleration = min(self.acceleration + self.acceleration_speed, 1.0)
-        elif keys[pygame.K_e]:  # Alternative Backward
-            self.acceleration = max(self.acceleration - self.acceleration_speed, -1.0)
-        else:
-            # Return to neutral
-            if self.acceleration > 0:
-                self.acceleration = max(self.acceleration - self.acceleration_speed * 0.5, 0)
-            elif self.acceleration < 0:
-                self.acceleration = min(self.acceleration + self.acceleration_speed * 0.5, 0)
+        # Acceleration control (W/S keys) - only if not emergency braking
+        if not self.emergency_brake:
+            if keys[pygame.K_s]:  # Forward
+                self.acceleration = min(self.acceleration + self.acceleration_speed, 1.0)
+            elif keys[pygame.K_w]:  # Backward
+                self.acceleration = max(self.acceleration - self.acceleration_speed, -1.0)
+            elif keys[pygame.K_q]:  # Alternative Forward
+                self.acceleration = min(self.acceleration + self.acceleration_speed, 1.0)
+            elif keys[pygame.K_e]:  # Alternative Backward
+                self.acceleration = max(self.acceleration - self.acceleration_speed, -1.0)
+            else:
+                # Return to neutral
+                if self.acceleration > 0:
+                    self.acceleration = max(self.acceleration - self.acceleration_speed * 0.5, 0)
+                elif self.acceleration < 0:
+                    self.acceleration = min(self.acceleration + self.acceleration_speed * 0.5, 0)
         
         return True
     
@@ -123,6 +116,7 @@ class ManualParkingControl:
         self.obs, self.info = self.env.reset()
         self.steering = 0.0
         self.acceleration = 0.0
+        self.emergency_brake = False # Reset emergency brake flag
     
     def random_spawn(self):
         """Spawn at a random position"""

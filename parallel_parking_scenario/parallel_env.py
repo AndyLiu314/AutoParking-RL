@@ -88,20 +88,22 @@ class ParkingEnv(AbstractEnv):
                     "speed_range": [-10, 10],  # Allow reverse speeds
                     "steering_range": [-np.pi/4, np.pi/4],
                 },
-                "reward_weights": [1.0, 1.0, 0.0, 0.0, 0.1, 0.1],  # [x, y, vx, vy, cos_h, sin_h]
-                "success_goal_reward": 0.11,
+                "reward_weights": [10.0, 10.0, -0.1, -0.1, 0.1, 0.1],  # [x, y, vx, vy, cos_h, sin_h]
+                "success_goal_reward": 0.30,  # Increased from 0.11 to 0.5 for easier success
                 "collision_reward": -5,
                 "steering_range": np.deg2rad(45),
                 "simulation_frequency": 15,
                 "policy_frequency": 5,
-                "duration": 80,
+                "duration": 100,
                 "screen_width": 1080,
                 "screen_height": 720,
                 "centering_position": [0.5, 0.5],
                 "scaling": 10,
                 "controlled_vehicles": 1,
-                "vehicles_count": 3,
+                "vehicles_count": 5,
                 "add_walls": True,
+                "parking_spacing": 4,  # New configurable spacing between parking spots
+                "parking_spots": 6,  # Number of parking spots
             }
         )
         return config
@@ -115,14 +117,6 @@ class ParkingEnv(AbstractEnv):
             self, self.PARKING_OBS["observation"]
         )
 
-
-    """
-        info = {
-            "speed": self.vehicle.speed,
-            "crashed": self.vehicle.crashed,
-            "action": action,
-        }
-    """
     def _info(self, obs, action=None) -> dict:
         info = super()._info(obs, action)
         obs = self.observation_type_parking.observe()
@@ -135,12 +129,11 @@ class ParkingEnv(AbstractEnv):
         self._create_vehicles()
         self.success_steps = 0  # Reset on episode start
 
-    def _create_road(self, spots: int = 4) -> None:
+    def _create_road(self) -> None:
         """
         Create a vertical road with parallel parking spots along the curb.
-
-        :param spots: number of parallel parking spots
         """
+        spots = self.config["parking_spots"]
         net = RoadNetwork()
 
         # Main road parameters
@@ -156,8 +149,8 @@ class ParkingEnv(AbstractEnv):
         net.add_lane(
             "main", "main_end",
             StraightLane(
-                [main_lane_x, -30],
-                [main_lane_x, 30],
+                [main_lane_x, -50],
+                [main_lane_x, 50],
                 width=main_road_width,
                 line_types=solid_line,
             )
@@ -168,7 +161,7 @@ class ParkingEnv(AbstractEnv):
 
         # Create multiple parking spots
         for i in range(spots):
-            spot_y_center = (i-(spots-1)/2) * (parking_spot_length  + 7)
+            spot_y_center = (i - (spots - 1) / 2) * (parking_spot_length + self.config["parking_spacing"])
             net.add_lane(
                 f"parking_{i}", f"parking_{i}_end",
                 StraightLane(
@@ -195,12 +188,10 @@ class ParkingEnv(AbstractEnv):
             x0 = (i - self.config["controlled_vehicles"] // 2)
             vehicle = self.action_type.vehicle_class(
                 road = self.road,
-                position = [x0 * 4, 0],
+                position = [x0 * 4, 40],
                 heading=np.deg2rad(90),
             )
             # Configure vehicle to support reverse movement
-            vehicle.MIN_SPEED = -10  # Allow reverse speeds
-            vehicle.MAX_SPEED = 10   # Allow forward speeds
             vehicle.color = VehicleGraphics.EGO_COLOR
             self.road.vehicles.append(vehicle)
             self.controlled_vehicles.append(vehicle)
@@ -219,6 +210,7 @@ class ParkingEnv(AbstractEnv):
                 goal_position,
                 heading=lane.heading
             )
+            vehicle.goal_lane = lane  # new: store the parking spot lane
             self.road.objects.append(vehicle.goal)
             empty_spots.remove(lane_index)
 
@@ -233,7 +225,7 @@ class ParkingEnv(AbstractEnv):
 
         # Walls
         if self.config["add_walls"]:
-            width, height = 35, 60
+            width, height = 40, 100
             for y in [-height / 2, height / 2]:
                 obstacle = Obstacle(self.road, [0, y])
                 obstacle.LENGTH, obstacle.WIDTH = (width, 1)
@@ -263,10 +255,13 @@ class ParkingEnv(AbstractEnv):
         :param p: the Lp^p norm used in the reward. Use p<1 to have high kurtosis for rewards in [0, 1]
         :return: the corresponding reward
         """
+        # We use `np.abs` on the dot product to prevent NaNs from `power(negative, 0.5)`
         return -np.power(
-            np.dot(
-                np.abs(achieved_goal - desired_goal),
-                np.array(self.config["reward_weights"]),
+            np.abs(
+                np.dot(
+                    np.abs(achieved_goal - desired_goal),
+                    np.array(self.config["reward_weights"]),
+                )
             ),
             p,
         )
@@ -283,6 +278,20 @@ class ParkingEnv(AbstractEnv):
         reward += self.config["collision_reward"] * sum(
             v.crashed for v in self.controlled_vehicles
         )
+        # Add a bonus for success
+        if any(self._is_success(agent_obs["achieved_goal"], agent_obs["desired_goal"]) for agent_obs in obs):
+            reward += 1.0  # Success bonus
+
+        # Add a penalty for going too fast at the goal
+        for agent_obs in obs:
+            if self._is_success(agent_obs["achieved_goal"], agent_obs["desired_goal"]):
+                # Extract velocity components (vx, vy are at indices 2 and 3)
+                vx, vy = agent_obs["achieved_goal"][2], agent_obs["achieved_goal"][3]
+                speed = np.sqrt(vx**2 + vy**2)
+                # Penalty proportional to speed (larger penalty for higher speeds)
+                speed_penalty = -0.2 * speed
+                reward += speed_penalty
+
         return reward
 
     def _is_success(self, achieved_goal: np.ndarray, desired_goal: np.ndarray) -> bool:
@@ -291,24 +300,7 @@ class ParkingEnv(AbstractEnv):
             self.compute_reward(achieved_goal, desired_goal, {})
             > -self.config["success_goal_reward"]
         )
-        
-        # Better stopping detection
-        vx, vy = achieved_goal[2], achieved_goal[3]
-        speed = np.sqrt(vx**2 + vy**2)  # Actual speed magnitude
-        speed_threshold = 0.05  # 5 cm/s - much more strict
-        
-        # Check if car is actually stopped
-        stopped = speed < speed_threshold
-        
-        # Number of steps required to be within goal for 2 seconds
-        required_steps = int(2 * self.config["simulation_frequency"])
-        
-        if within_goal and stopped:
-            self.success_steps += 1
-        else:
-            self.success_steps = 0
-            
-        return self.success_steps >= required_steps
+        return within_goal
 
     def _is_terminated(self) -> bool:
         """The episode is over if the ego vehicle crashed or the goal is reached or time is over."""
