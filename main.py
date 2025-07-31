@@ -7,6 +7,8 @@ import torch.optim as optim
 from collections import deque
 import matplotlib.pyplot as plt
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 class DynamicsModel(nn.Module):
     def __init__(self, state_dim, action_dim, hidden_dim=64):
         super(DynamicsModel, self).__init__()
@@ -53,7 +55,7 @@ class ModelBasedRLAgent:
         self.action_dim = env.action_space.shape[0]
         
         # Dynamics model
-        self.dynamics_model = DynamicsModel(self.state_dim, self.action_dim, hidden_dim)
+        self.dynamics_model = DynamicsModel(self.state_dim, self.action_dim, hidden_dim).to(device)
         self.optimizer = optim.Adam(self.dynamics_model.parameters())
         self.criterion = nn.MSELoss()
         
@@ -68,8 +70,8 @@ class ModelBasedRLAgent:
         self.num_iterations = num_iterations
         
         # CEM parameters
-        self.action_mean = torch.zeros((planning_horizon, self.action_dim))
-        self.action_std = torch.ones((planning_horizon, self.action_dim))
+        self.action_mean = torch.zeros((planning_horizon, self.action_dim), device=device)
+        self.action_std = torch.ones((planning_horizon, self.action_dim), device=device)
         
     def extract_state(self, obs):
         return obs['observation']
@@ -86,9 +88,9 @@ class ModelBasedRLAgent:
         states, actions, next_states = zip(*batch)
         
         return (
-            torch.FloatTensor(np.array(states)),
-            torch.FloatTensor(np.array(actions)),
-            torch.FloatTensor(np.array(next_states))
+            torch.FloatTensor(np.array(states)).to(device),
+            torch.FloatTensor(np.array(actions)).to(device),
+            torch.FloatTensor(np.array(next_states)).to(device)
         )
         
     def train_dynamics_model(self, num_epochs=10):
@@ -125,8 +127,8 @@ class ModelBasedRLAgent:
         return -np.linalg.norm(position_diff) - 0.5 * heading_diff
         
     def plan_action_sequence(self, initial_state, goal_state):
-        initial_state = torch.FloatTensor(initial_state)
-        goal_state = torch.FloatTensor(goal_state)
+        initial_state = torch.FloatTensor(initial_state).to(device)
+        goal_state = torch.FloatTensor(goal_state).to(device)
         
         # CEM planning
         for _ in range(self.num_iterations):
@@ -146,7 +148,7 @@ class ModelBasedRLAgent:
                 
                 # Compute reward (convert to numpy for reward calculation)
                 for i in range(self.num_sequences):
-                    rewards[i] += self.reward_function(next_states[i].detach().numpy(), goal_state.numpy())
+                    rewards[i] += self.reward_function(next_states[i].detach().cpu().numpy(), goal_state.cpu().numpy())
                 
                 states = next_states.detach()
             
@@ -160,7 +162,7 @@ class ModelBasedRLAgent:
         
         # Return first action of best sequence
         best_sequence_idx = rewards.argmax()
-        return action_sequences[best_sequence_idx, 0, :].detach().numpy()
+        return action_sequences[best_sequence_idx, 0, :].detach().cpu().numpy()
         
     def collect_initial_experience(self, num_episodes=50, max_steps=100):
         print("Collecting initial experience...")
@@ -212,6 +214,8 @@ class ModelBasedRLAgent:
                 loss = self.train_dynamics_model()
                 losses_history.append(loss)
                 print(f"Episode {episode}, Loss: {loss:.4f}, Reward: {episode_reward:.2f}")
+            else:
+                print(f"Episode {episode}, Reward: {episode_reward:.2f}")
             
             rewards_history.append(episode_reward)
             
