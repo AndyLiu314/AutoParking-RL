@@ -88,9 +88,9 @@ class ParkingEnv(AbstractEnv):
                     "speed_range": [-10, 10],  # Allow reverse speeds
                     "steering_range": [-np.pi/4, np.pi/4],
                 },
-                "reward_weights": [10.0, 10.0, -0.1, -0.1, 0.1, 0.1],  # [x, y, vx, vy, cos_h, sin_h]
+                "reward_weights": [20.0, 20.0, -0.1, -0.1, 0.1, 0.1],  # [x, y, vx, vy, cos_h, sin_h]
                 "success_goal_reward": 0.30,  # Increased from 0.11 to 0.5 for easier success
-                "collision_reward": -5,
+                "collision_reward": -50,
                 "steering_range": np.deg2rad(45),
                 "simulation_frequency": 15,
                 "policy_frequency": 5,
@@ -188,8 +188,8 @@ class ParkingEnv(AbstractEnv):
             x0 = (i - self.config["controlled_vehicles"] // 2)
             vehicle = self.action_type.vehicle_class(
                 road = self.road,
-                position = [x0 * 4, 40],
-                heading=np.deg2rad(90),
+                position=[x0 * 4, self.np_random.uniform(-45, 45)],
+                heading=np.deg2rad(90 + self.np_random.uniform(-5, 5)),
             )
             # Configure vehicle to support reverse movement
             vehicle.color = VehicleGraphics.EGO_COLOR
@@ -280,7 +280,7 @@ class ParkingEnv(AbstractEnv):
         )
         # Add a bonus for success
         if any(self._is_success(agent_obs["achieved_goal"], agent_obs["desired_goal"]) for agent_obs in obs):
-            reward += 1.0  # Success bonus
+            reward += 10.0  # Success bonus
 
         # Add a penalty for going too fast at the goal
         for agent_obs in obs:
@@ -289,7 +289,7 @@ class ParkingEnv(AbstractEnv):
                 vx, vy = agent_obs["achieved_goal"][2], agent_obs["achieved_goal"][3]
                 speed = np.sqrt(vx**2 + vy**2)
                 # Penalty proportional to speed (larger penalty for higher speeds)
-                speed_penalty = -0.2 * speed
+                speed_penalty = -0.4 * speed
                 reward += speed_penalty
 
         return reward

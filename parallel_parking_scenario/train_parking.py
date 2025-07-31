@@ -13,20 +13,20 @@ from parallel_env import ParkingEnv
 try:
     import intel_extension_for_pytorch as ipex
     import torch
-    print("✅ Intel GPU acceleration available!")
+    print("Intel GPU acceleration available!")
     print(f"PyTorch version: {torch.__version__}")
     print(f"Intel Extension for PyTorch available: {ipex.__version__}")
 
     # Configure PyTorch to use Intel GPU
     if torch.xpu.is_available():
         device = torch.device("xpu")
-        print(f"✅ Using Intel GPU: {torch.xpu.get_device_name()}")
+        print(f"Using Intel GPU: {torch.xpu.get_device_name()}")
     else:
         device = torch.device("cpu")
-        print("⚠️ Intel GPU not detected, using CPU")
+        print("Intel GPU not detected, using CPU")
 
 except ImportError:
-    print("⚠️ Intel Extension for PyTorch not installed")
+    print("Intel Extension for PyTorch not installed")
     print("Install with: pip install intel-extension-for-pytorch")
     device = torch.device("cpu")
 
@@ -58,12 +58,12 @@ def make_env(render_mode=None):
     env = Monitor(env)
     return env
 
-def train_parking_model():
+def train_parking_model(checkpoint_path=None):
     """Train the parallel parking model with improved stability"""
 
     # Create a vectorized environment for parallel training
     num_cpu = os.cpu_count()
-    print(f"🚀 Using {num_cpu} parallel environments for training.")
+    print(f"Using {num_cpu} parallel environments for training.")
     train_env = make_vec_env("parallel-parking-v0", n_envs=num_cpu, vec_env_cls=SubprocVecEnv)
 
     # Use a single, non-vectorized environment for evaluation
@@ -89,39 +89,48 @@ def train_parking_model():
         name_prefix="parking_model"
     )
 
-    # More conservative hyperparameters to prevent NaN
-    model = SAC(
-        "MultiInputPolicy",
-        train_env,
-        verbose=1,
-        learning_rate=1e-4,  # Reduced learning rate
-        buffer_size=100000,  # Smaller buffer
-        learning_starts=10000,  # More random exploration before learning
-        batch_size=128,  # Smaller batch size
-        tau=0.01,  # Slower target network updates
-        gamma=0.99,
-        train_freq=(4, "step"),  # Less frequent training, adjusted for vec env
-        gradient_steps=1,
-        ent_coef=0.2,  # Fixed entropy coefficient
-        target_entropy="auto",
-        policy_kwargs=dict(
-            net_arch=dict(
-                pi=[512,512,256],  # larger network
-                qf=[512,512,256]
+    if checkpoint_path and os.path.exists(checkpoint_path):
+        print(f"🔄 Resuming training from checkpoint: {checkpoint_path}")
+        model = SAC.load(
+            checkpoint_path,
+            env=train_env,
+            tensorboard_log=f"{log_dir}/tensorboard_logs",
+            device=device
+        )
+    else:
+        if checkpoint_path:
+            print(f"Checkpoint not found at {checkpoint_path}. Starting new training.")
+        else:
+            print("Starting new training session.")
+        # More conservative hyperparameters to prevent NaN
+        model = SAC(
+            "MultiInputPolicy",
+            train_env,
+            verbose=1,
+            learning_rate=1e-4,  # Reduced learning rate
+            buffer_size=2000000,  # Smaller buffer
+            learning_starts=50000,  # More random exploration before learning
+            batch_size=512,  # Smaller batch size
+            tau=0.005,  # Slower target network updates
+            gamma=0.99,
+            train_freq=(1, "step"),  # Train every step
+            gradient_steps=2,
+            ent_coef=0.5,
+            target_entropy="auto",
+            use_sde=True,  # better exploration
+            sde_sample_freq=1,  # more frequent SDE sampling
+            policy_kwargs=dict(
+                net_arch=dict(
+                    pi=[512,512],  # larger network
+                    qf=[512,512]
+                ),
+                log_std_init=-2.5,
+                use_expln=False,
             ),
-            use_sde=False,  # Disable state-dependent exploration
-            log_std_init=-3,  # Lower initial log std
-            use_expln=False,  # Use standard normal distribution
-        ),
-        tensorboard_log=f"{log_dir}/tensorboard_logs",
-        device=device,
-        seed=42  # Set seed for reproducibility
-    )
-
-    print(f"🎯 Model initialized on device: {device}")
-    if device.type == "cuda":
-        print(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
-        print(f"GPU Memory Allocated: {torch.cuda.memory_allocated(0) / 1e6:.1f} MB")
+            tensorboard_log=f"{log_dir}/tensorboard_logs",
+            device=device,
+            seed=42  # Set seed for reproducibility
+        )
 
     # Set manual seed for PyTorch
     import torch
@@ -132,9 +141,10 @@ def train_parking_model():
         torch.xpu.manual_seed(42)
 
     model.learn(
-        total_timesteps=500000,  # Reduced timesteps for initial testing
+        total_timesteps=1000000,  # Reduced timesteps for initial testing
         callback=[eval_callback, checkpoint_callback],
-        progress_bar=True
+        progress_bar=True,
+        reset_num_timesteps=False
     )
 
     model.save(f"{log_dir}/final_model")
@@ -182,15 +192,26 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Train or test parallel parking model")
+
+    #
+    # Add command line arguments for training and testing
+    # for testing use: python train_parking.py --mode test --model_path ./parallel_parking_scenario/parking_training_logs/best_model/best_model
+    # for training use: python train_parking.py --mode train
     parser.add_argument("--mode", choices=["train", "test"], default="train",
                         help="Mode: train or test")
+
     parser.add_argument("--model_path", type=str,
                         default="./parallel_parking_scenario/parking_training_logs/best_model/best_model",
                         help="Path to model for testing")
 
+    # to continue training from a checkpoint, use:
+    # python train_parking.py --mode train --checkpoint ./parallel_parking_scenario/
+    parser.add_argument("--checkpoint", type=str, default=None,
+                        help="Path to a model checkpoint to continue training from.")
+
     args = parser.parse_args()
 
     if args.mode == "train":
-        train_parking_model()
+        train_parking_model(checkpoint_path=args.checkpoint)
     else:
         test_trained_model(args.model_path)
