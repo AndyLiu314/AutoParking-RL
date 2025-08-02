@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import abstractmethod, ABC
+from typing import Any
 
 import numpy as np
 from gymnasium import Env
@@ -14,6 +15,8 @@ from highway_env.road.road import Road, RoadNetwork
 from highway_env.vehicle.graphics import VehicleGraphics
 from highway_env.vehicle.kinematics import Vehicle
 from highway_env.vehicle.objects import Landmark, Obstacle
+from numpy import floating
+from sympy import false
 
 
 class GoalEnv(Env, ABC):
@@ -85,25 +88,29 @@ class ParkingEnv(AbstractEnv):
                     "type": "ContinuousAction",
                     "longitudinal": True,
                     "lateral": True,
-                    "speed_range": [-10, 10],  # Allow reverse speeds
                     "steering_range": [-np.pi/4, np.pi/4],
                 },
-                "reward_weights": [20.0, 20.0, -0.1, -0.1, 0.1, 0.1],  # [x, y, vx, vy, cos_h, sin_h]
-                "success_goal_reward": 0.30,  # Increased from 0.11 to 0.5 for easier success
-                "collision_reward": -50,
+                "reward_weights": [4, 4, .001, .001, 0.035, 0.035],
+                "success_threshold": 0.40,  # Reward threshold for success
+                "proximity_reward_scale": 0,
+
+                "success_reward": 5,
+                "collision_reward": -100,
                 "steering_range": np.deg2rad(45),
                 "simulation_frequency": 15,
                 "policy_frequency": 5,
-                "duration": 100,
+                "duration": 50,
                 "screen_width": 1080,
                 "screen_height": 720,
                 "centering_position": [0.5, 0.5],
-                "scaling": 10,
+                "scaling": 7,
                 "controlled_vehicles": 1,
                 "vehicles_count": 5,
                 "add_walls": True,
-                "parking_spacing": 4,  # New configurable spacing between parking spots
-                "parking_spots": 6,  # Number of parking spots
+                "parking_spacing": 4,
+                "parking_spots": 6,
+                "random_heading": False,  # Randomize initial heading
+                "random_spawn": False,  # Random spawn position
             }
         )
         return config
@@ -188,9 +195,12 @@ class ParkingEnv(AbstractEnv):
             x0 = (i - self.config["controlled_vehicles"] // 2)
             vehicle = self.action_type.vehicle_class(
                 road = self.road,
-                position=[x0 * 4, self.np_random.uniform(-45, 45)],
-                heading=np.deg2rad(90 + self.np_random.uniform(-5, 5)),
-            )
+                position=[x0 * 4, self.np_random.uniform(-10, 45) if self.config.get("random_spawn", False) else 45],
+                heading = np.deg2rad(
+                    90 if self.np_random.choice([True, False]) else -90
+                    if self.config.get("random_heading", True)
+                    else 90
+                )            )
             # Configure vehicle to support reverse movement
             vehicle.color = VehicleGraphics.EGO_COLOR
             self.road.vehicles.append(vehicle)
@@ -245,23 +255,19 @@ class ParkingEnv(AbstractEnv):
             p: float = 0.5,
     ) -> float:
         """
-        Proximity to the goal is rewarded
-
-        We use a weighted p-norm
+        Proximity to the goal is rewarded using weighted p-norm
 
         :param achieved_goal: the goal that was achieved
         :param desired_goal: the goal that was desired
         :param dict info: any supplementary information
         :param p: the Lp^p norm used in the reward. Use p<1 to have high kurtosis for rewards in [0, 1]
-        :return: the corresponding reward
+        :return: the corresponding reward (negative distance)
         """
-        # We use `np.abs` on the dot product to prevent NaNs from `power(negative, 0.5)`
+        # print difference between achieved and desired goal
         return -np.power(
-            np.abs(
-                np.dot(
-                    np.abs(achieved_goal - desired_goal),
-                    np.array(self.config["reward_weights"]),
-                )
+            np.dot(
+                np.abs(achieved_goal - desired_goal),
+                np.array(self.config["reward_weights"])
             ),
             p,
         )
@@ -278,29 +284,39 @@ class ParkingEnv(AbstractEnv):
         reward += self.config["collision_reward"] * sum(
             v.crashed for v in self.controlled_vehicles
         )
-        # Add a bonus for success
-        if any(self._is_success(agent_obs["achieved_goal"], agent_obs["desired_goal"]) for agent_obs in obs):
-            reward += 10.0  # Success bonus
 
-        # Add a penalty for going too fast at the goal
-        for agent_obs in obs:
-            if self._is_success(agent_obs["achieved_goal"], agent_obs["desired_goal"]):
-                # Extract velocity components (vx, vy are at indices 2 and 3)
-                vx, vy = agent_obs["achieved_goal"][2], agent_obs["achieved_goal"][3]
-                speed = np.sqrt(vx**2 + vy**2)
-                # Penalty proportional to speed (larger penalty for higher speeds)
-                speed_penalty = -0.4 * speed
-                reward += speed_penalty
+        # Add negative log proximity reward: small distances = big rewards
+        distance = self._distance_to_goal(
+                    achieved_goal=obs[0]["achieved_goal"],
+                    desired_goal=obs[0]["desired_goal"]
+                )
+        epsilon = 1e-3  # Prevent log(0)
+        proximity_reward = -self.config["proximity_reward_scale"] * np.log(distance + epsilon)
+        reward += proximity_reward
+
+        # add bonus for success
+        if self._is_success(obs[0]["achieved_goal"], obs[0]["desired_goal"]):
+            reward += self.config["success_reward"]
 
         return reward
 
+    def _distance_to_goal(self, achieved_goal: np.ndarray, desired_goal: np.ndarray) -> floating[Any]:
+        """
+        Compute the Euclidean distance to the goal based on x,y position only.
+        :param achieved_goal: the goal that was achieved [x, y, vx, vy, cos_h, sin_h]
+        :param desired_goal: the goal that was desired [x, y, vx, vy, cos_h, sin_h]
+        :return: the Euclidean distance to the goal position
+        """
+        # Extract only x,y coordinates (first 2 elements)
+        achieved_position = achieved_goal[:2]
+        desired_position = desired_goal[:2]
+        return np.linalg.norm(achieved_position - desired_position)
+
     def _is_success(self, achieved_goal: np.ndarray, desired_goal: np.ndarray) -> bool:
-        # Check if car is within the goal (as before)
-        within_goal = (
-            self.compute_reward(achieved_goal, desired_goal, {})
-            > -self.config["success_goal_reward"]
+        return (
+                self.compute_reward(achieved_goal, desired_goal, {})
+                > -self.config["success_threshold"]
         )
-        return within_goal
 
     def _is_terminated(self) -> bool:
         """The episode is over if the ego vehicle crashed or the goal is reached or time is over."""
