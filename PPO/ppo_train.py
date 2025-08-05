@@ -27,7 +27,7 @@ if __name__ == "__main__":
         ),
 
         clip_range=0.2,
-        n_steps=batch_size * 12 // n_cpu,
+        n_steps=1024,
         batch_size=batch_size,
         n_epochs=10,
         learning_rate=4e-4,
@@ -37,6 +37,6 @@ if __name__ == "__main__":
     )
 
     # Train the agent
-    model.learn(total_timesteps=int(2e5))
+    model.learn(total_timesteps=int(3e5))
     # Save the agent
     model.save("PPO_parking")
