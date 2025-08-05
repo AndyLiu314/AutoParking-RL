@@ -12,7 +12,9 @@ if __name__ == "__main__":
 
     def custom_env():
         return gym.make("parking-v0", render_mode="rgb_array", config={
-            "add_walls": False
+            "add_walls": False,
+            "success_goal_reward": 0.15,  # More reward for success
+            "reward_weights": [1.0, 0.27, 0.01, 0, 0.022, 0.022]
         })
 
     train_env = make_vec_env(custom_env, n_envs=n_cpu, vec_env_cls=SubprocVecEnv)
@@ -27,10 +29,10 @@ if __name__ == "__main__":
         ),
 
         clip_range=0.2,
-        n_steps=1024,
+        n_steps=batch_size * 12 // n_cpu,
         batch_size=batch_size,
         n_epochs=10,
-        learning_rate=4e-4,
+        learning_rate=8e-4,
         gamma=0.95,
         ent_coef=0.01,
         verbose=2,
