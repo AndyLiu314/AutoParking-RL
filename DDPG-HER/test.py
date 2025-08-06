@@ -7,10 +7,11 @@ from stable_baselines3 import DDPG
 
 # Load the trained model with new test environment for viewing results
 test_env = gym.make("parking-v0", render_mode="human", config={
-    "add_walls": False
+    "add_walls": False,
+    "reward_weights": [1.05, 0.27, 0.01, 0, 0.022, 0.022] # high accuracy, fast execution
 })
 
-model = DDPG.load('DDPG_HER_parking', env=test_env)
+model = DDPG.load('DDPG_HER_parking_high-accuracy', env=test_env)
 
 obs, info = test_env.reset()
 
