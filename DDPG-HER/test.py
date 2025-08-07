@@ -19,8 +19,6 @@ episode_data = defaultdict(list)
 trajectories = []
 
 # Evaluate the agent
-episode_reward = 0
-rewards = []
 for ep in range(50):
     obs, info = test_env.reset()
     done = truncated = False
