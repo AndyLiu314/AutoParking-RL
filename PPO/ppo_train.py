@@ -10,14 +10,17 @@ if __name__ == "__main__":
     n_cpu = 4
     batch_size = 512
 
+    # Configuring the env
     def custom_env():
         return gym.make("parking-v0", render_mode="rgb_array", config={
             "add_walls": False,
             "reward_weights": [1.0, 0.27, 0.01, 0, 0.022, 0.022]
         })
 
+    # Create vectorized environment for running in parallel 
     train_env = make_vec_env(custom_env, n_envs=n_cpu, vec_env_cls=SubprocVecEnv)
 
+    # Initialize the agent
     model = PPO(
         "MultiInputPolicy",
         train_env,
