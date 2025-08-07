@@ -8,12 +8,11 @@ from stable_baselines3.common.vec_env import SubprocVecEnv
 
 if __name__ == "__main__":
     n_cpu = 4
-    batch_size = 256
+    batch_size = 512
 
     def custom_env():
         return gym.make("parking-v0", render_mode="rgb_array", config={
             "add_walls": False,
-            "success_goal_reward": 0.15,  # More reward for success
             "reward_weights": [1.0, 0.27, 0.01, 0, 0.022, 0.022]
         })
 
@@ -23,7 +22,7 @@ if __name__ == "__main__":
         "MultiInputPolicy",
         train_env,
         policy_kwargs=dict(
-            net_arch=dict(pi=[256, 256, 256], vf=[256, 256, 256]),
+            net_arch=dict(pi=[512, 512, 512], vf=[512, 512, 512]),
             activation_fn=torch.nn.ReLU,
             ortho_init=True
         ),
@@ -32,7 +31,7 @@ if __name__ == "__main__":
         n_steps=batch_size * 12 // n_cpu,
         batch_size=batch_size,
         n_epochs=10,
-        learning_rate=8e-4,
+        learning_rate=5e-4,
         gamma=0.95,
         ent_coef=0.01,
         verbose=2,
