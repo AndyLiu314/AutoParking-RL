@@ -39,13 +39,13 @@ try:
     import torch
     if torch.cuda.is_available():
         device = torch.device("cuda")
-        print(f"✅ Using NVIDIA GPU: {torch.cuda.get_device_name()}")
+        print(f"Using NVIDIA GPU: {torch.cuda.get_device_name()}")
         # Optimize GPU settings for better performance
         torch.backends.cudnn.benchmark = True
         torch.backends.cudnn.deterministic = False
         print("GPU optimizations enabled")
     elif device.type == "cpu":
-        print("⚠No GPU detected, using CPU")
+        print("No GPU detected, using CPU")
 except:
     pass
 
@@ -228,7 +228,7 @@ def train_parking_model(checkpoint_path=None):
     )
 
     if checkpoint_path and os.path.exists(checkpoint_path):
-        print(f"🔄 Resuming training from checkpoint: {checkpoint_path}")
+        print(f"Resuming training from checkpoint: {checkpoint_path}")
         model = SAC.load(
             checkpoint_path,
             env=train_env,
@@ -277,7 +277,7 @@ def train_parking_model(checkpoint_path=None):
     )
 
     # Plot training metrics after training completes
-    print("🎨 Generating training metrics plots...")
+    print("Generating training metrics plots...")
     plot_training_metrics(metrics_callback, log_dir)
 
     model.save(f"{log_dir}/final_model")
