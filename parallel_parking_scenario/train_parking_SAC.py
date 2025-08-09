@@ -22,7 +22,6 @@ try:
     print(f"PyTorch version: {torch.__version__}")
     print(f"Intel Extension for PyTorch available: {ipex.__version__}")
 
-    # Configure PyTorch to use Intel GPU
     if torch.xpu.is_available():
         device = torch.device("xpu")
         print(f"Using Intel GPU: {torch.xpu.get_device_name()}")
@@ -44,9 +43,9 @@ try:
         # Optimize GPU settings for better performance
         torch.backends.cudnn.benchmark = True
         torch.backends.cudnn.deterministic = False
-        print("🚀 GPU optimizations enabled")
+        print("GPU optimizations enabled")
     elif device.type == "cpu":
-        print("⚠️ No GPU detected, using CPU")
+        print("⚠No GPU detected, using CPU")
 except:
     pass
 
@@ -189,7 +188,7 @@ Avg Length: {np.mean(metrics_callback.episode_lengths[-len(metrics_callback.epis
     # Save the plot
     plot_path = os.path.join(log_dir, 'training_metrics.png')
     plt.savefig(plot_path, dpi=300, bbox_inches='tight')
-    print(f"📊 Training metrics plot saved to: {plot_path}")
+    print(f"Training metrics plot saved to: {plot_path}")
 
     # Show the plot
     plt.show()

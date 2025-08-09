@@ -8,7 +8,7 @@ from gymnasium import Env
 
 from highway_env.envs.common.abstract import AbstractEnv
 from highway_env.envs.common.observation import (
-    observation_factory,
+    observation_factory, MultiAgentObservation,
 )
 from highway_env.road.lane import LineType, StraightLane
 from highway_env.road.road import Road, RoadNetwork
@@ -17,46 +17,6 @@ from highway_env.vehicle.kinematics import Vehicle
 from highway_env.vehicle.objects import Landmark, Obstacle
 from numpy import floating
 from sympy import false
-
-
-class GoalEnv(Env, ABC):
-    """
-    Interface for A goal-based environment.
-
-    This interface is needed by agents such as Stable Baseline3's Hindsight Experience Replay (HER) agent.
-    It was originally part of https://github.com/openai/gym, but was later moved
-    to https://github.com/Farama-Foundation/gym-robotics. We cannot add gym-robotics to this project's dependencies,
-    since it does not have an official PyPi package, PyPi does not allow direct dependencies to git repositories.
-    So instead, we just reproduce the interface here.
-
-    A goal-based environment. It functions just as any regular OpenAI Gym environment, but it
-    imposes a required structure on the observation_space. More concretely, the observation
-    space is required to contain at least three elements, namely `observation`, `desired_goal`, and
-    `achieved_goal`. Here, `desired_goal` specifies the goal that the agent should attempt to achieve.
-    `achieved_goal` is the goal that it currently achieved instead. `observation` contains the
-    actual observations of the environment as per usual.
-    """
-
-    @abstractmethod
-    def compute_reward(
-            self, achieved_goal: np.ndarray, desired_goal: np.ndarray, info: dict
-    ) -> float:
-        """Compute the step reward. This externalizes the reward function and makes
-        it dependent on a desired goal and the one that was achieved. If you wish to include
-        additional rewards that are independent of the goal, you can include the necessary values
-        to derive it in 'info' and compute it accordingly.
-        Args:
-            achieved_goal (object): the goal that was achieved during execution
-            desired_goal (object): the desired goal that we asked the agent to attempt to achieve
-            info (dict): an info dictionary with additional information
-        Returns:
-            float: The reward that corresponds to the provided achieved goal w.r.t. to the desired
-            goal. Note that the following should always hold true:
-                ob, reward, done, info = env.step()
-                assert reward == env.compute_reward(ob['achieved_goal'], ob['desired_goal'], info)
-        """
-        raise NotImplementedError
-
 
 class ParkingEnv(AbstractEnv):
     PARKING_OBS = {
@@ -86,9 +46,6 @@ class ParkingEnv(AbstractEnv):
                 },
                 "action": {
                     "type": "ContinuousAction",
-                    "longitudinal": True,
-                    "lateral": True,
-                    "steering_range": [-np.pi/4, np.pi/4],
                 },
                 "reward_weights": [4, 4, .001, .001, 0.035, 0.035],
                 "success_threshold": 0.40,  # Reward threshold for success
@@ -126,15 +83,20 @@ class ParkingEnv(AbstractEnv):
 
     def _info(self, obs, action=None) -> dict:
         info = super()._info(obs, action)
-        obs = self.observation_type_parking.observe()
-        success = self._is_success(obs["achieved_goal"], obs["desired_goal"])
+        if isinstance(self.observation_type, MultiAgentObservation):
+            success = tuple(
+                self._is_success(agent_obs["achieved_goal"], agent_obs["desired_goal"])
+                for agent_obs in obs
+            )
+        else:
+            obs = self.observation_type_parking.observe()
+            success = self._is_success(obs["achieved_goal"], obs["desired_goal"])
         info.update({"is_success": success})
         return info
 
     def _reset(self):
         self._create_road()
         self._create_vehicles()
-        self.success_steps = 0  # Reset on episode start
 
     def _create_road(self) -> None:
         """

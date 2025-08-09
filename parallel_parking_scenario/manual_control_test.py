@@ -8,14 +8,14 @@ class ManualParkingControl:
         """Initialize manual control for parking environment"""
         # Initialize pygame for keyboard input
         pygame.init()
-        
+
         self.env = ParkingEnv(render_mode="human")
 
         # Print action space info
-        print(f"🎯 Action space: {self.env.action_space}")
-        print(f"🎯 Action space shape: {self.env.action_space.shape}")
-        print(f"🎯 Action space low: {self.env.action_space.low}")
-        print(f"🎯 Action space high: {self.env.action_space.high}")
+        print(f"Action space: {self.env.action_space}")
+        print(f"Action space shape: {self.env.action_space.shape}")
+        print(f"Action space low: {self.env.action_space.low}")
+        print(f"Action space high: {self.env.action_space.high}")
         
         self.obs = None
         self.info = None
@@ -28,18 +28,13 @@ class ManualParkingControl:
         self.acceleration_speed = 0.01  # Reduced from 0.3 for slower movement
         self.emergency_brake = False # Flag to maintain braking
         
-        print("🎮 Manual Parking Control")
+        print("Manual Parking Control")
         print("Controls:")
         print("  S - Forward")
         print("  W - Backward")
         print("  Q/E - Alternative Forward/Backward")
         print("  D/A - Steer Left/Right")
-        print("  X - Emergency Brake (true stop)")
-        print("  SPACE - Reset")
-        print("  ESC - Quit")
-        print("  R - Random spawn")
-        print("  G - Show goal position")
-    
+
     def handle_events(self):
         """Handle pygame events for manual control"""
         for event in pygame.event.get():
@@ -48,7 +43,7 @@ class ManualParkingControl:
                 return False
             
             if event.type == pygame.KEYDOWN:
-                print(f"🔍 Key pressed: {event.key}")  # Debug: print any key press
+                print(f"Key pressed: {event.key}")  # Debug: print any key press
                 if event.key == pygame.K_ESCAPE:
                     self.running = False
                     return False
@@ -62,8 +57,8 @@ class ManualParkingControl:
                     # Emergency brake: use maximum negative acceleration
                     self.acceleration = -1.0  # Maximum brake
                     self.emergency_brake = True  # Flag to maintain braking
-                    print("🛑 Emergency brake pressed - maximum deceleration!")
-        
+                    print("Emergency brake pressed - maximum deceleration!")
+
         # Continuous key handling
         keys = pygame.key.get_pressed()
         
@@ -77,8 +72,8 @@ class ManualParkingControl:
                 speed = (vx**2 + vy**2)**0.5
                 if speed < 0.1:  # If speed is very low, stop emergency braking
                     self.emergency_brake = False
-                    print("🛑 Emergency brake released - car stopped!")
-        
+                    print("Emergency brake released - car stopped!")
+
         # Steering control (A/D keys)
         if keys[pygame.K_d]:  # Left
             self.steering = max(self.steering - self.steering_speed, -1.0)
@@ -112,7 +107,7 @@ class ManualParkingControl:
     
     def reset_environment(self):
         """Reset the environment"""
-        print("🔄 Resetting environment...")
+        print("Resetting environment...")
         self.obs, self.info = self.env.reset()
         self.steering = 0.0
         self.acceleration = 0.0
@@ -120,7 +115,7 @@ class ManualParkingControl:
     
     def random_spawn(self):
         """Spawn at a random position"""
-        print("🎲 Random spawn...")
+        print("Random spawn...")
         # The environment will handle random spawning
         self.reset_environment()
     
@@ -129,9 +124,9 @@ class ManualParkingControl:
         if self.obs is not None and isinstance(self.obs, dict):
             if 'desired_goal' in self.obs:
                 goal = self.obs['desired_goal']
-                print(f"🎯 Goal position: ({goal[0]:.2f}, {goal[1]:.2f})")
-                print(f"🎯 Goal orientation: cos={goal[4]:.2f}, sin={goal[5]:.2f}")
-    
+                print(f"Goal position: ({goal[0]:.2f}, {goal[1]:.2f})")
+                print(f"Goal orientation: cos={goal[4]:.2f}, sin={goal[5]:.2f}")
+
     def get_action(self):
         """Get the current action based on manual input"""
         # Convert steering and acceleration to action space
@@ -170,17 +165,17 @@ class ManualParkingControl:
             
             # Check if episode is done
             if done or truncated:
-                print("🏁 Episode finished!")
-                print(f"💰 Final Reward: {self.last_reward:.3f}")
+                print("Episode finished!")
+                print(f"Final Reward: {self.last_reward:.3f}")
                 if self.info.get('is_success', False):
-                    print("🎉 SUCCESS! Car parked successfully!")
+                    print("SUCCESS! Car parked successfully!")
                 self.reset_environment()
             
             # Render
             self.env.render()
         
         self.env.close()
-        print("👋 Manual control ended")
+        print("Manual control ended")
 
 def main():
     """Main function to run manual parking control"""
@@ -188,7 +183,7 @@ def main():
         controller = ManualParkingControl()
         controller.run()
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"Error: {e}")
         print("Make sure the parallel_env module is available")
 
 if __name__ == "__main__":
