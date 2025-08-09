@@ -1,5 +1,5 @@
 import gymnasium as gym
-import highway_env
+import highway_env.envs.u_turn_env
 
 # Create environment
 env = gym.make("parking-v0", render_mode="human")

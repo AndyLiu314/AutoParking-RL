@@ -1,0 +1,296 @@
+from __future__ import annotations
+
+from abc import abstractmethod, ABC
+from typing import Any
+
+import numpy as np
+from gymnasium import Env
+
+from highway_env.envs.common.abstract import AbstractEnv
+from highway_env.envs.common.observation import (
+    observation_factory, MultiAgentObservation,
+)
+from highway_env.road.lane import LineType, StraightLane
+from highway_env.road.road import Road, RoadNetwork
+from highway_env.vehicle.graphics import VehicleGraphics
+from highway_env.vehicle.kinematics import Vehicle
+from highway_env.vehicle.objects import Landmark, Obstacle
+from numpy import floating
+from sympy import false
+
+class ParkingEnv(AbstractEnv):
+    PARKING_OBS = {
+        "observation": {
+            "type": "KinematicsGoal",
+            "features": ["x", "y", "vx", "vy", "cos_h", "sin_h"],
+            "scales": [100, 100, 5, 5, 1, 1], # the scales for the features
+            "normalize": False,
+        }
+    }
+
+    def __init__(self, config: dict = None, render_mode: str | None = None) -> None:
+        super().__init__(config, render_mode)
+        self.observation_type_parking = None
+        self.success_steps = 0  # Track consecutive steps within the goal
+
+    @classmethod
+    def default_config(cls) -> dict:
+        config = super().default_config()
+        config.update(
+            {
+                "observation": {
+                    "type": "KinematicsGoal",
+                    "features": ["x", "y", "vx", "vy", "cos_h", "sin_h"],
+                    "scales": [100, 100, 5, 5, 1, 1],
+                    "normalize": False,
+                },
+                "action": {
+                    "type": "ContinuousAction",
+                },
+                "reward_weights": [4, 4, .001, .001, 0.035, 0.035],
+                "success_threshold": 0.40,  # Reward threshold for success
+                "proximity_reward_scale": 0,
+
+                "success_reward": 5,
+                "collision_reward": -100,
+                "steering_range": np.deg2rad(45),
+                "simulation_frequency": 15,
+                "policy_frequency": 5,
+                "duration": 50,
+                "screen_width": 1080,
+                "screen_height": 720,
+                "centering_position": [0.5, 0.5],
+                "scaling": 7,
+                "controlled_vehicles": 1,
+                "vehicles_count": 5,
+                "add_walls": True,
+                "parking_spacing": 4,
+                "parking_spots": 6,
+                "random_heading": False,  # Randomize initial heading
+                "random_spawn": False,  # Random spawn position
+            }
+        )
+        return config
+
+    def define_spaces(self) -> None:
+        """
+        Set the types and spaces of observation and action from config.
+        """
+        super().define_spaces()
+        self.observation_type_parking = observation_factory(
+            self, self.PARKING_OBS["observation"]
+        )
+
+    def _info(self, obs, action=None) -> dict:
+        info = super()._info(obs, action)
+        if isinstance(self.observation_type, MultiAgentObservation):
+            success = tuple(
+                self._is_success(agent_obs["achieved_goal"], agent_obs["desired_goal"])
+                for agent_obs in obs
+            )
+        else:
+            obs = self.observation_type_parking.observe()
+            success = self._is_success(obs["achieved_goal"], obs["desired_goal"])
+        info.update({"is_success": success})
+        return info
+
+    def _reset(self):
+        self._create_road()
+        self._create_vehicles()
+
+    def _create_road(self) -> None:
+        """
+        Create a vertical road with parallel parking spots along the curb.
+        """
+        spots = self.config["parking_spots"]
+        net = RoadNetwork()
+
+        # Main road parameters
+        main_road_width = 4.0
+        parking_spot_length = 6.0
+        parking_spot_width = 2.5
+        curb_offset = 2.0
+
+        solid_line = LineType.CONTINUOUS, LineType.CONTINUOUS
+
+        # Create main driving lane (vertical)
+        main_lane_x = 0
+        net.add_lane(
+            "main", "main_end",
+            StraightLane(
+                [main_lane_x, -50],
+                [main_lane_x, 50],
+                width=main_road_width,
+                line_types=solid_line,
+            )
+        )
+
+        # PARKING SPOT NEXT TO MAIN ROADS on THE RIGHT SIDE
+        curb_x = main_lane_x + main_road_width/2 + curb_offset + parking_spot_width/2
+
+        # Create multiple parking spots
+        for i in range(spots):
+            spot_y_center = (i - (spots - 1) / 2) * (parking_spot_length + self.config["parking_spacing"])
+            net.add_lane(
+                f"parking_{i}", f"parking_{i}_end",
+                StraightLane(
+                    [curb_x, spot_y_center - parking_spot_length / 2],
+                    [curb_x, spot_y_center + parking_spot_length / 2],
+                    width=parking_spot_width,
+                    line_types=solid_line
+                )
+            )
+
+        self.road = Road(
+            network=net,
+            np_random=self.np_random,
+            record_history=self.config["show_trajectories"],
+        )
+
+    def _create_vehicles(self) -> None:
+        """Create some new random vehicles of a given type, and add them on the road."""
+        empty_spots = list(self.road.network.lanes_dict().keys())
+
+        # Controlled vehicles
+        self.controlled_vehicles = []
+        for i in range(self.config["controlled_vehicles"]):
+            x0 = (i - self.config["controlled_vehicles"] // 2)
+            vehicle = self.action_type.vehicle_class(
+                road = self.road,
+                position=[x0 * 4, self.np_random.uniform(-10, 45) if self.config.get("random_spawn", False) else 45],
+                heading = np.deg2rad(
+                    90 if self.np_random.choice([True, False]) else -90
+                    if self.config.get("random_heading", True)
+                    else 90
+                )            )
+            # Configure vehicle to support reverse movement
+            vehicle.color = VehicleGraphics.EGO_COLOR
+            self.road.vehicles.append(vehicle)
+            self.controlled_vehicles.append(vehicle)
+            empty_spots.remove(vehicle.lane_index)
+
+        # Goal
+        for vehicle in self.controlled_vehicles:
+            lane_index = empty_spots[self.np_random.choice(np.arange(len(empty_spots)))]
+            lane = self.road.network.get_lane(lane_index)
+
+            # Calculate the true center of the parking spot
+            goal_position = lane.position(lane.length / 2, 0)
+
+            vehicle.goal = Landmark(
+                self.road,
+                goal_position,
+                heading=lane.heading
+            )
+            vehicle.goal_lane = lane  # new: store the parking spot lane
+            self.road.objects.append(vehicle.goal)
+            empty_spots.remove(lane_index)
+
+        # Other vehicles
+        for i in range(self.config["vehicles_count"]):
+            if not empty_spots:
+                continue
+            lane_index = empty_spots[self.np_random.choice(np.arange(len(empty_spots)))]
+            v = Vehicle.make_on_lane(self.road, lane_index, 4, speed=0)
+            self.road.vehicles.append(v)
+            empty_spots.remove(lane_index)
+
+        # Walls
+        if self.config["add_walls"]:
+            width, height = 40, 100
+            for y in [-height / 2, height / 2]:
+                obstacle = Obstacle(self.road, [0, y])
+                obstacle.LENGTH, obstacle.WIDTH = (width, 1)
+                obstacle.diagonal = np.sqrt(obstacle.LENGTH**2 + obstacle.WIDTH**2)
+                self.road.objects.append(obstacle)
+            for x in [-width / 2, width / 2]:
+                obstacle = Obstacle(self.road, [x, 0], heading=np.pi / 2)
+                obstacle.LENGTH, obstacle.WIDTH = (height, 1)
+                obstacle.diagonal = np.sqrt(obstacle.LENGTH**2 + obstacle.WIDTH**2)
+                self.road.objects.append(obstacle)
+
+    def compute_reward(
+            self,
+            achieved_goal: np.ndarray,
+            desired_goal: np.ndarray,
+            info: dict,
+            p: float = 0.5,
+    ) -> float:
+        """
+        Proximity to the goal is rewarded using weighted p-norm
+
+        :param achieved_goal: the goal that was achieved
+        :param desired_goal: the goal that was desired
+        :param dict info: any supplementary information
+        :param p: the Lp^p norm used in the reward. Use p<1 to have high kurtosis for rewards in [0, 1]
+        :return: the corresponding reward (negative distance)
+        """
+        # print difference between achieved and desired goal
+        return -np.power(
+            np.dot(
+                np.abs(achieved_goal - desired_goal),
+                np.array(self.config["reward_weights"])
+            ),
+            p,
+        )
+
+    def _reward(self, action: np.ndarray) -> float:
+        obs = self.observation_type_parking.observe()
+        obs = obs if isinstance(obs, tuple) else (obs,)
+        reward = sum(
+            self.compute_reward(
+                agent_obs["achieved_goal"], agent_obs["desired_goal"], {}
+            )
+            for agent_obs in obs
+        )
+        reward += self.config["collision_reward"] * sum(
+            v.crashed for v in self.controlled_vehicles
+        )
+
+        # Add negative log proximity reward: small distances = big rewards
+        distance = self._distance_to_goal(
+                    achieved_goal=obs[0]["achieved_goal"],
+                    desired_goal=obs[0]["desired_goal"]
+                )
+        epsilon = 1e-3  # Prevent log(0)
+        proximity_reward = -self.config["proximity_reward_scale"] * np.log(distance + epsilon)
+        reward += proximity_reward
+
+        # add bonus for success
+        if self._is_success(obs[0]["achieved_goal"], obs[0]["desired_goal"]):
+            reward += self.config["success_reward"]
+
+        return reward
+
+    def _distance_to_goal(self, achieved_goal: np.ndarray, desired_goal: np.ndarray) -> floating[Any]:
+        """
+        Compute the Euclidean distance to the goal based on x,y position only.
+        :param achieved_goal: the goal that was achieved [x, y, vx, vy, cos_h, sin_h]
+        :param desired_goal: the goal that was desired [x, y, vx, vy, cos_h, sin_h]
+        :return: the Euclidean distance to the goal position
+        """
+        # Extract only x,y coordinates (first 2 elements)
+        achieved_position = achieved_goal[:2]
+        desired_position = desired_goal[:2]
+        return np.linalg.norm(achieved_position - desired_position)
+
+    def _is_success(self, achieved_goal: np.ndarray, desired_goal: np.ndarray) -> bool:
+        return (
+                self.compute_reward(achieved_goal, desired_goal, {})
+                > -self.config["success_threshold"]
+        )
+
+    def _is_terminated(self) -> bool:
+        """The episode is over if the ego vehicle crashed or the goal is reached or time is over."""
+        crashed = any(vehicle.crashed for vehicle in self.controlled_vehicles)
+        obs = self.observation_type_parking.observe()
+        obs = obs if isinstance(obs, tuple) else (obs,)
+        success = all(
+            self._is_success(agent_obs["achieved_goal"], agent_obs["desired_goal"])
+            for agent_obs in obs
+        )
+        return bool(crashed or success)
+
+    def _is_truncated(self) -> bool:
+        """The episode is truncated if the time is over."""
+        return self.time >= self.config["duration"]
