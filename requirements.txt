@@ -1,0 +1,8 @@
+pygame
+gymnasium
+numpy
+matplotlib
+stable_baselines3
+highway-env
+torch
+sympy
