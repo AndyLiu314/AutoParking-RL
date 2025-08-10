@@ -3,16 +3,28 @@ from parallel_env import ParkingEnv
 from stable_baselines3 import SAC
 import matplotlib.pyplot as plt
 import numpy as np
+import argparse
+import os
+
+# Parse command line arguments
+parser = argparse.ArgumentParser(description='Test parallel parking SAC model')
+parser.add_argument('--model', '-m', type=str,
+                   help='Path to the SAC model file (e.g., path/to/model.zip)')
+parser.add_argument('--steps', '-s', type=int, default=10000,
+                   help='Number of steps to run the test (default: 10000)')
+args = parser.parse_args()
 
 env = ParkingEnv(render_mode="human")
 
-# check if final_model.zip exists
-try:
-    model = SAC.load("parallel_parking_scenario/models/best.zip", env=env)
-    print("Loaded final model successfully.")
-except FileNotFoundError:
-    model = SAC.load("parallel_parking_scenario/parking_training_logs/best_model/best_model.zip", env=env)
-    print("Final model not found, loading best model instead.")
+# Load model based on command line argument or default behavior
+if args.model:
+    if os.path.exists(args.model):
+        model = SAC.load(args.model, env=env)
+        print(f"Loaded model from: {args.model}")
+    else:
+        print(f"Error: Model file '{args.model}' not found.")
+        print("Please provide a valid model file path using --model path/to/model.zip")
+        exit(1)
 
 obs, info = env.reset()
 
@@ -25,7 +37,7 @@ current_episode_length = 0
 episode_count = 0
 successful_episodes = 0
 
-for step in range(10000):
+for step in range(args.steps):
     action, _ = model.predict(obs, deterministic=True)
     obs, reward, done, truncated, info = env.step(action)
     env.render()
@@ -83,7 +95,11 @@ ax4.set_ylabel('Frequency')
 ax4.grid(True)
 
 plt.tight_layout()
-plt.savefig('parallel_parking_scenario/testing_results.png', dpi=300, bbox_inches='tight')
+
+# Create directory if it doesn't exist and save with correct path
+results_dir = os.path.dirname(os.path.abspath(__file__))
+results_path = os.path.join(results_dir, 'testing_results.png')
+plt.savefig(results_path, dpi=300, bbox_inches='tight')
 plt.show()
 
 # Print summary statistics
@@ -93,3 +109,4 @@ print(f"Average Reward: {np.mean(episode_rewards):.2f}")
 print(f"Average Episode Length: {np.mean(episode_lengths):.2f}")
 print(f"Final Success Rate: {success_rates[-1]:.2f}")
 print(f"Best Episode Reward: {np.max(episode_rewards):.2f}")
+
