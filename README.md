@@ -15,6 +15,7 @@
    - gymnasium
    - torch
    - matplotlib
+   - pygame
    - numpy
 
 3. **(Optional) For Intel GPU acceleration**
@@ -60,5 +61,22 @@ python train_parking_SAC.py --mode train
 ### Test SAC Agent
 
 ```bash
-python test_parellel_model.py --model path/to/model.zip
+python test_parellel_model.py --model ../../model.zip
 ```
+
+### Test and Train DQN Agent
+
+```bash
+cd ../pygame-training
+python train.py
+```
+### Visualize DQN Agent
+
+```bash
+cd ../pygame-training
+python visualize_parking.py
+```
+
+
+
+
