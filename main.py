@@ -4,258 +4,151 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from collections import deque
 import matplotlib.pyplot as plt
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# The below code references these sources
+    # https://github.com/Farama-Foundation/HighwayEnv/blob/master/scripts/parking_model_based.ipynb
+    # https://pradeepgopal1997.medium.com/mini-project-2-2cafa300895c
+
+# This is a very simple implementation as we ran out of time to further develop and research the design of this model
+
+env = gym.make("parking-v0", render_mode="rgb_array")
+state_dim = env.observation_space["observation"].shape[0]
+action_dim = env.action_space.shape[0]
 
 class DynamicsModel(nn.Module):
-    def __init__(self, state_dim, action_dim, hidden_dim=64):
-        super(DynamicsModel, self).__init__()
-        # Network for A_theta (state transformation)
-        self.A_theta = nn.Sequential(
-            nn.Linear(state_dim + action_dim, hidden_dim),
+    # A simple dynamics model, will add more complexity once more research into this is done
+    def __init__(self, state_dim, action_dim):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(state_dim + action_dim, 64),
             nn.ReLU(),
-            nn.Linear(hidden_dim, state_dim * state_dim)
+            nn.Linear(64, state_dim)
         )
         
-        # Network for B_theta (action transformation)
-        self.B_theta = nn.Sequential(
-            nn.Linear(state_dim + action_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, state_dim * action_dim)
-        )
-        
-        self.state_dim = state_dim
-        self.action_dim = action_dim
-        
-    def forward(self, x, u):
-        # x: state, u: action, this is from control theory
-        xu = torch.cat([x, u], dim=-1)
-        
-        A_flat = self.A_theta(xu)
-        A = A_flat.view(-1, self.state_dim, self.state_dim)
-        
-        B_flat = self.B_theta(xu)
-        B = B_flat.view(-1, self.state_dim, self.action_dim)
-        
-        # Compute next state: x_{t+1} = A(x,u) * x + B(x,u) * u
-        x_next = torch.bmm(A, x.unsqueeze(-1)).squeeze(-1) + torch.bmm(B, u.unsqueeze(-1)).squeeze(-1)
-        
-        return x_next
+    def forward(self, state, action):
+        x = torch.cat([state, action], dim=-1)
+        return self.net(x)
 
-class ModelBasedRLAgent:
-    def __init__(self, env, buffer_size=10000, batch_size=64, hidden_dim=64, 
-                 planning_horizon=20, num_sequences=100, top_k=20, num_iterations=5):
-        self.env = env
+class ModelBasedAgent:
+    def __init__(self):
+        self.model = DynamicsModel(state_dim, action_dim)
+        self.optimizer = optim.Adam(self.model.parameters())
+        self.memory = []
         
-        # Extract dimensions from observation space
-        obs_space = env.observation_space['observation']
-        self.state_dim = obs_space.shape[0]
-        self.action_dim = env.action_space.shape[0]
+    def get_action(self, state, goal):
+        # Random planning - just sample random actions and pick the best
+        best_action = None
+        best_reward = -float('inf')
         
-        # Dynamics model
-        self.dynamics_model = DynamicsModel(self.state_dim, self.action_dim, hidden_dim).to(device)
-        self.optimizer = optim.Adam(self.dynamics_model.parameters())
-        self.criterion = nn.MSELoss()
-        
-        # Experience buffer
-        self.buffer = deque(maxlen=buffer_size)
-        self.batch_size = batch_size
-        
-        # Planning parameters
-        self.planning_horizon = planning_horizon
-        self.num_sequences = num_sequences
-        self.top_k = top_k
-        self.num_iterations = num_iterations
-        
-        # CEM parameters
-        self.action_mean = torch.zeros((planning_horizon, self.action_dim), device=device)
-        self.action_std = torch.ones((planning_horizon, self.action_dim), device=device)
-        
-    def extract_state(self, obs):
-        return obs['observation']
-        
-    def add_experience(self, state, action, next_state):
-        self.buffer.append((state, action, next_state))
-        
-    def sample_batch(self):
-        if len(self.buffer) < self.batch_size:
-            return None
+        for _ in range(100):
+            action = env.action_space.sample()
+            action_tensor = torch.FloatTensor(action).unsqueeze(0)
+            state_tensor = torch.FloatTensor(state).unsqueeze(0)
             
-        indices = np.random.choice(len(self.buffer), self.batch_size, replace=False)
-        batch = [self.buffer[i] for i in indices]
-        states, actions, next_states = zip(*batch)
-        
-        return (
-            torch.FloatTensor(np.array(states)).to(device),
-            torch.FloatTensor(np.array(actions)).to(device),
-            torch.FloatTensor(np.array(next_states)).to(device)
-        )
-        
-    def train_dynamics_model(self, num_epochs=10):
-        if len(self.buffer) < self.batch_size:
+            # Predict next state
+            next_state = self.model(state_tensor, action_tensor)
+            
+            # Simple reward based on distance to goal, should replace with weighted p-norm from the API doc
+            reward = -np.linalg.norm(next_state.detach().numpy()[0][:2] - goal[:2])
+            
+            if reward > best_reward:
+                best_reward = reward
+                best_action = action
+                
+        return best_action
+    
+    def train_model(self):
+        if len(self.memory) < 100:
             return float('inf')
             
-        losses = []
-        for _ in range(num_epochs):
-            batch = self.sample_batch()
-            if batch is None:
-                continue
-                
-            states, actions, next_states = batch
-            
-            # Forward pass
-            pred_next_states = self.dynamics_model(states, actions)
-            
-            # Compute loss
-            loss = self.criterion(pred_next_states, next_states)
-            
-            # Backward pass
-            self.optimizer.zero_grad()
-            loss.backward()
-            self.optimizer.step()
-            
-            losses.append(loss.item())
-            
-        return np.mean(losses) if losses else float('inf')
+        # Simple training - just use last 100 samples
+        samples = self.memory[-100:]
+        states = torch.FloatTensor([s[0] for s in samples])
+        actions = torch.FloatTensor([s[1] for s in samples])
+        next_states = torch.FloatTensor([s[2] for s in samples])
         
-    def reward_function(self, state, goal_state):
-        # Simple reward based on distance to goal, MAYBE REPLACE WITH COMPUTE_REWARD INCLUDED IN API
-        position_diff = state[:2] - goal_state[:2]
-        heading_diff = np.abs(state[2] - goal_state[2])
-        return -np.linalg.norm(position_diff) - 0.5 * heading_diff
+        # Train with one gradient step
+        self.optimizer.zero_grad()
+        pred_next = self.model(states, actions)
+        loss = torch.mean((pred_next - next_states)**2)
+        loss.backward()
+        self.optimizer.step()
         
-    def plan_action_sequence(self, initial_state, goal_state):
-        initial_state = torch.FloatTensor(initial_state).to(device)
-        goal_state = torch.FloatTensor(goal_state).to(device)
-        
-        # CEM planning
-        for _ in range(self.num_iterations):
-            # Sample action sequences
-            action_sequences = torch.normal(
-                self.action_mean.repeat(self.num_sequences, 1, 1),
-                self.action_std.repeat(self.num_sequences, 1, 1)
-            )
-            
-            # Evaluate sequences
-            rewards = torch.zeros(self.num_sequences)
-            states = initial_state.repeat(self.num_sequences, 1)
-            
-            for t in range(self.planning_horizon):
-                actions = action_sequences[:, t, :]
-                next_states = self.dynamics_model(states, actions)
-                
-                # Compute reward (convert to numpy for reward calculation)
-                for i in range(self.num_sequences):
-                    rewards[i] += self.reward_function(next_states[i].detach().cpu().numpy(), goal_state.cpu().numpy())
-                
-                states = next_states.detach()
-            
-            # Select top-k sequences
-            _, top_indices = torch.topk(rewards, self.top_k)
-            elite_sequences = action_sequences[top_indices]
-            
-            # Update sampling distribution
-            self.action_mean = elite_sequences.mean(dim=0)
-            self.action_std = elite_sequences.std(dim=0)
-        
-        # Return first action of best sequence
-        best_sequence_idx = rewards.argmax()
-        return action_sequences[best_sequence_idx, 0, :].detach().cpu().numpy()
-        
-    def collect_initial_experience(self, num_episodes=50, max_steps=100):
-        print("Collecting initial experience...")
-        for _ in range(num_episodes):
-            obs, _ = self.env.reset()
-            state = self.extract_state(obs)
-            goal_state = obs['desired_goal']
-            
-            for _ in range(max_steps):
-                action = self.env.action_space.sample()
-                next_obs, _, terminated, truncated, _ = self.env.step(action)
-                next_state = self.extract_state(next_obs)
-                self.add_experience(state, action, next_state)
-                
-                if terminated or truncated:
-                    break
-                state = next_state
-        print(f"Collected {len(self.buffer)} experiences")
-        
-    def train(self, num_episodes=200, max_steps=100, train_every=10):
-        self.collect_initial_experience()
-        
-        rewards_history = []
-        losses_history = []
-        
-        for episode in range(num_episodes):
-            obs, _ = self.env.reset()
-            state = self.extract_state(obs)
-            goal_state = obs['desired_goal']
-            
-            episode_reward = 0
-            for step in range(max_steps):
-                # Plan action using CEM
-                action = self.plan_action_sequence(state, goal_state)
-                
-                # Execute action
-                next_obs, reward, terminated, truncated, _ = self.env.step(action)
-                next_state = self.extract_state(next_obs)
-                self.add_experience(state, action, next_state)
-                
-                episode_reward += reward
-                state = next_state
-                
-                if terminated or truncated:
-                    break
-            
-            # Train dynamics model periodically, prevents overfitting (possibly better learning, need to test more)
-            if episode % train_every == 0: 
-                loss = self.train_dynamics_model()
-                losses_history.append(loss)
-                print(f"Episode {episode}, Loss: {loss:.4f}, Reward: {episode_reward:.2f}")
-            else:
-                print(f"Episode {episode}, Reward: {episode_reward:.2f}")
-            
-            rewards_history.append(episode_reward)
-            
-        return rewards_history, losses_history
+        return loss.item()
 
-# Create environment
-env = gym.make("parking-v0", render_mode="rgb_array")
+# Training loop
+agent = ModelBasedAgent()
+rewards = []
+losses = []
 
-agent = ModelBasedRLAgent(env)
+for episode in range(1500):
+    obs, _ = env.reset()
+    state = obs["observation"]
+    goal = obs["desired_goal"]
+    total_reward = 0
+    
+    for step in range(100):
+        # Get action from random planner
+        action = agent.get_action(state, goal)
+        
+        # Take action in environment
+        next_obs, reward, done, _, _ = env.step(action)
+        next_state = next_obs["observation"]
+        
+        # Store experience
+        agent.memory.append((state, action, next_state))
+        total_reward += reward
+        state = next_state
+        
+        if done:
+            break
+    
+    # Train model after each episode
+    loss = agent.train_model()
+    losses.append(loss)
+    rewards.append(total_reward)
+    
+    print(f"Episode {episode}, Loss: {loss:.2f}, Reward: {total_reward:.2f}")
 
-rewards, losses = agent.train(num_episodes=100)
-
-# Plot results
-plt.figure(figsize=(12, 5))
+plt.figure(figsize=(10, 4))
 plt.subplot(1, 2, 1)
 plt.plot(rewards)
-plt.title("Episode Rewards")
-plt.xlabel("Episode")
-plt.ylabel("Reward")
-
+plt.title("Rewards")
 plt.subplot(1, 2, 2)
 plt.plot(losses)
-plt.title("Dynamics Model Loss")
-plt.xlabel("Training Step")
-plt.ylabel("MSE Loss")
-
-plt.tight_layout()
+plt.title("Losses")
 plt.show()
-
-# Test the trained agent
-obs, _ = env.reset()
-state = agent.extract_state(obs)
-goal_state = obs['desired_goal']
-for _ in range(200):
-    action = agent.plan_action_sequence(state, goal_state)
-    next_obs, _, terminated, truncated, _ = env.step(action)
-    state = agent.extract_state(next_obs)
-    env.render()
-    
-    if terminated or truncated:
-        break
-
 env.close()
+
+# TESTING THE TRAINED MODEL
+print("\nTesting trained model...")
+test_env = gym.make("parking-v0", render_mode="human", config={
+    "add_walls": False
+})
+
+for test_episode in range(10):
+    obs, _ = test_env.reset()
+    state = obs["observation"]
+    goal = obs["desired_goal"]
+    total_reward = 0
+    
+    for step in range(100):
+        # Get action from our trained planner
+        action = agent.get_action(state, goal)
+        
+        # Take action in environment
+        next_obs, reward, done, _, _ = test_env.step(action)
+        next_state = next_obs["observation"]
+        
+        # Render
+        test_env.render()
+        
+        total_reward += reward
+        state = next_state
+        
+        if done:
+            print(f"Test Episode {test_episode} completed with reward: {total_reward:.2f}")
+            break
+
+test_env.close()
