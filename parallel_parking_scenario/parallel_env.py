@@ -19,6 +19,10 @@ from numpy import floating
 from sympy import false
 
 class ParkingEnv(AbstractEnv):
+    # This parallel parking environment builds upon:
+    # Leurent, Edouard. "An Environment for Autonomous Driving Decision-Making." (2018).
+    # GitHub repository: https://github.com/eleurent/highway-env
+
     PARKING_OBS = {
         "observation": {
             "type": "KinematicsGoal",
@@ -217,8 +221,6 @@ class ParkingEnv(AbstractEnv):
             p: float = 0.5,
     ) -> float:
         """
-        Proximity to the goal is rewarded using weighted p-norm
-
         :param achieved_goal: the goal that was achieved
         :param desired_goal: the goal that was desired
         :param dict info: any supplementary information
