@@ -1,10 +1,11 @@
-import gymnasium
-from parallel_env import ParkingEnv
-from stable_baselines3 import SAC
-import matplotlib.pyplot as plt
-import numpy as np
 import argparse
 import os
+
+import matplotlib.pyplot as plt
+import numpy as np
+from stable_baselines3 import SAC
+
+from parallel_env import ParkingEnv
 
 # Parse command line arguments
 parser = argparse.ArgumentParser(description='Test parallel parking SAC model')

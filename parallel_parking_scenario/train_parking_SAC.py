@@ -3,21 +3,18 @@ import numpy as np
 import gymnasium as gym
 import matplotlib.pyplot as plt
 import matplotlib.style as style
-from matplotlib.animation import FuncAnimation
-from collections import deque
+import torch
 from stable_baselines3 import SAC
 from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback, BaseCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.logger import configure
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import SubprocVecEnv
-from stable_baselines3.common.vec_env import VecNormalize
 from parallel_env import ParkingEnv
 
 # Intel GPU acceleration setup
 try:
     import intel_extension_for_pytorch as ipex
-    import torch
     print("Intel GPU acceleration available!")
     print(f"PyTorch version: {torch.__version__}")
     print(f"Intel Extension for PyTorch available: {ipex.__version__}")

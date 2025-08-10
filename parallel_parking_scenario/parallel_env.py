@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-from abc import abstractmethod, ABC
 from typing import Any
 
 import numpy as np
-from gymnasium import Env
-
 from highway_env.envs.common.abstract import AbstractEnv
 from highway_env.envs.common.observation import (
     observation_factory, MultiAgentObservation,
@@ -16,7 +13,7 @@ from highway_env.vehicle.graphics import VehicleGraphics
 from highway_env.vehicle.kinematics import Vehicle
 from highway_env.vehicle.objects import Landmark, Obstacle
 from numpy import floating
-from sympy import false
+
 
 class ParkingEnv(AbstractEnv):
     # This parallel parking environment builds upon:
