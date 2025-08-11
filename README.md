@@ -52,7 +52,7 @@ python ddpg_test.py
 ```
 
 ### Train SAC Agent for Parallel Parking
-
+First, download
 ```bash
 cd ../../parallel_parking_scenario
 python train_parking_SAC.py --mode train
@@ -65,7 +65,6 @@ python test_parellel_model.py --model ../../model.zip
 ```
 
 ### Test and Train DQN Agent
-
 ```bash
 cd ../pygame-training
 python train.py
@@ -75,6 +74,11 @@ python train.py
 ```bash
 cd ../pygame-training
 python visualize_parking.py
+```
+### To play the game (on your own)
+```bash
+cd ../pygame-training
+python game.py
 ```
 
 
