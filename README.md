@@ -70,7 +70,8 @@ cd ../pygame-training
 python train.py
 ```
 ### Visualize DQN Agent
-
+Run with the file: parking_dqn_model.pth,
+produced by train.py
 ```bash
 cd ../pygame-training
 python visualize_parking.py
