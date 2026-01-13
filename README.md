@@ -1,5 +1,9 @@
 # AutoParking-RL
 
+## Demo
+![PPO](/media/PPO.gif)
+<br>![DDPG-Her](/media/DDPG-HER.gif)
+
 ## Installation
 
 1. **Extract the ZIP file**
